@@ -79,6 +79,10 @@ type WebviewMessage =
   | { type: 'quitSession' };
 
 async function handleMessage(message: WebviewMessage): Promise<void> {
+  const loadingLabel = getLoadingLabel(message);
+  if (loadingLabel) {
+    post({ type: 'loading', active: true, label: loadingLabel });
+  }
   try {
     switch (message.type) {
       case 'ready':
@@ -131,6 +135,20 @@ async function handleMessage(message: WebviewMessage): Promise<void> {
     const text = error instanceof Error ? error.message : String(error);
     output.appendLine(text);
     post({ type: 'notice', level: 'error', text });
+  } finally {
+    if (loadingLabel) {
+      post({ type: 'loading', active: false });
+    }
+  }
+}
+
+function getLoadingLabel(message: WebviewMessage): string | undefined {
+  switch (message.type) {
+    case 'startServer': return 'Appium Server を起動しています…';
+    case 'stopServer': return 'Appium Server を停止しています…';
+    case 'startSession': return 'セッションを開始しています…';
+    case 'quitSession': return 'セッションを終了しています…';
+    default: return undefined;
   }
 }
 
@@ -191,11 +209,32 @@ async function stopServer(): Promise<void> {
   if (!serverProcess) {
     throw new Error('この拡張機能から起動した Appium Server はありません。');
   }
+  const child = serverProcess;
   output.appendLine('Appium Server を停止します。');
-  if (!serverProcess.kill('SIGTERM')) {
+  const closed = waitForProcessExit(child);
+  if (!child.kill('SIGTERM')) {
     throw new Error('Appium Server の停止要求を送信できませんでした。');
   }
-  post({ type: 'notice', level: 'success', text: 'Appium Server の停止を要求しました。' });
+  await closed;
+  post({ type: 'notice', level: 'success', text: 'Appium Server を停止しました。' });
+}
+
+function waitForProcessExit(child: ChildProcessWithoutNullStreams): Promise<void> {
+  if (child.exitCode !== null) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error('Appium Server の停止がタイムアウトしました。出力パネルのログを確認してください。'));
+    }, 10_000);
+    const onClose = (): void => { cleanup(); resolve(); };
+    const cleanup = (): void => {
+      clearTimeout(timeout);
+      child.off('close', onClose);
+    };
+    child.once('close', onClose);
+  });
 }
 
 async function isServerReachable(serverUrl: string): Promise<boolean> {
@@ -451,37 +490,52 @@ function getWebviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): stri
   <title>Appium Inspector Lite</title>
 </head>
 <body>
-  <main>
-    <header><h1>Appium Inspector Lite</h1><span id="session-state">未接続</span></header>
-    <section class="card" id="connection-card">
-      <h2>接続</h2>
-      <label>Appium Server URL<input id="server-url" value="http://127.0.0.1:4723" spellcheck="false"></label>
-      <div class="actions"><button id="start-server" class="secondary">Server 起動</button><button id="stop-server" class="secondary" disabled>Server 停止</button><button id="show-log" class="secondary">ログを表示</button><span id="server-state">停止中</span></div>
-      <label>Capabilities (JSON)<textarea id="capabilities" spellcheck="false">{
+  <main class="app-shell">
+    <div id="loading" class="loading-overlay" role="status" aria-live="polite" hidden><div class="loading-card"><span class="spinner" aria-hidden="true"></span><span id="loading-label">処理しています…</span></div></div>
+    <header class="app-header"><div><h1>Appium Inspector</h1><span class="app-subtitle">Mobile UI inspector</span></div><span id="session-state" class="status-pill">未接続</span></header>
+    <nav class="tab-list" role="tablist" aria-label="Inspector の表示切替">
+      <button class="tab-trigger active" role="tab" aria-selected="true" data-tab="connection">接続</button>
+      <button class="tab-trigger" role="tab" aria-selected="false" data-tab="screen">画面</button>
+      <button class="tab-trigger" role="tab" aria-selected="false" data-tab="elements">要素</button>
+      <button class="tab-trigger" role="tab" aria-selected="false" data-tab="source">XML</button>
+    </nav>
+    <section id="tab-connection" class="tab-panel scroll-panel active" role="tabpanel">
+      <div class="card connection-card">
+        <div class="section-heading"><h2>Appium Server</h2><span id="server-state" class="muted-status">停止中</span></div>
+        <label>Server URL<input id="server-url" value="http://127.0.0.1:4723" spellcheck="false"></label>
+        <div class="actions action-grid"><button id="start-server">Server 起動</button><button id="stop-server" class="secondary" disabled>停止</button><button id="show-log" class="secondary">ログ</button></div>
+      </div>
+      <div class="card">
+        <div class="section-heading"><h2>セッション</h2><span class="muted-status">W3C</span></div>
+        <div class="actions action-grid"><button id="start">セッション開始</button><button id="quit" class="secondary">終了</button></div>
+        <details class="capabilities"><summary>Capabilities を編集</summary><label>Capabilities (JSON)<textarea id="capabilities" spellcheck="false">{
   "platformName": "Android",
   "appium:automationName": "UiAutomator2",
   "appium:deviceName": "Android Emulator"
-}</textarea></label>
-      <div class="actions"><button id="start">セッション開始</button><button id="quit" class="secondary">セッション終了</button></div>
-    </section>
-    <section class="card">
-      <div class="section-heading"><h2>画面</h2><button id="refresh" class="secondary">更新</button></div>
-      <div id="screenshot-empty">セッションを開始すると、端末画面がここに表示されます。</div>
-      <img id="screenshot" alt="Appium screenshot">
-      <p id="screenshot-hint">スクリーンショット上の要素をクリックすると、対応するネイティブ要素を選択します。</p>
-    </section>
-    <section class="card">
-      <h2>要素を検索</h2>
-      <div class="find-row"><select id="using"><option value="accessibility id">accessibility id</option><option value="id">id</option><option value="xpath">xpath</option><option value="class name">class name</option><option value="-android uiautomator">Android UIAutomator</option><option value="-ios predicate string">iOS predicate</option></select><input id="locator" placeholder="例: login_button"><button id="find">検索</button></div>
-      <div id="element-result" hidden>
-        <code id="element-id"></code>
-        <div class="actions"><button id="copy-locator" class="secondary">locator をコピー</button><button id="tap">タップ</button></div>
-        <label>テキスト入力<input id="text-to-send" placeholder="入力する文字列"></label>
-        <button id="send-keys">入力</button>
+}</textarea></label></details>
       </div>
     </section>
-    <section class="card"><div class="section-heading"><h2>Page Source</h2><button id="copy-source" class="secondary">XMLをコピー</button></div><pre id="source">まだ取得していません。</pre></section>
-    <p id="notice" role="status"></p>
+    <section id="tab-screen" class="tab-panel screen-panel" role="tabpanel">
+      <div class="screen-toolbar"><div><strong>端末画面</strong><span>クリックして要素を選択</span></div><button id="refresh" class="secondary">更新</button></div>
+      <div class="screenshot-stage"><div id="screenshot-empty">セッションを開始すると、端末画面が表示されます。</div><img id="screenshot" alt="Appium screenshot"></div>
+      <p id="screenshot-hint">要素を選ぶと、要素タブに locator と操作を表示します。</p>
+    </section>
+    <section id="tab-elements" class="tab-panel scroll-panel" role="tabpanel">
+      <div class="card">
+        <h2>要素を検索</h2>
+        <label>Locator 戦略<select id="using"><option value="accessibility id">accessibility id</option><option value="id">id</option><option value="xpath">xpath</option><option value="class name">class name</option><option value="-android uiautomator">Android UIAutomator</option><option value="-ios predicate string">iOS predicate</option></select></label>
+        <div class="find-row"><input id="locator" placeholder="例: login_button"><button id="find">検索</button></div>
+      </div>
+      <div id="element-result" class="card selected-element" hidden>
+        <div class="section-heading"><h2>選択中の要素</h2><button id="copy-locator" class="secondary">コピー</button></div>
+        <code id="element-id"></code>
+        <button id="tap" class="full-width">タップ</button>
+        <label>テキスト入力<input id="text-to-send" placeholder="入力する文字列"></label>
+        <button id="send-keys" class="secondary full-width">テキストを入力</button>
+      </div>
+    </section>
+    <section id="tab-source" class="tab-panel source-panel" role="tabpanel"><div class="source-toolbar"><strong>Page Source</strong><button id="copy-source" class="secondary">XMLをコピー</button></div><pre id="source">まだ取得していません。</pre></section>
+    <p id="notice" role="status" aria-live="polite"></p>
   </main>
   <script nonce="${nonce}" src="${script}"></script>
 </body>

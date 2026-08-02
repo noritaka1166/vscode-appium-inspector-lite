@@ -4,6 +4,17 @@ const state = { element: null, session: null, source: '' };
 const $ = (selector) => document.querySelector(selector);
 const send = (message) => vscode.postMessage(message);
 
+function selectTab(name) {
+  document.querySelectorAll('.tab-trigger').forEach((button) => {
+    const active = button.dataset.tab === name;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', String(active));
+  });
+  document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.toggle('active', panel.id === `tab-${name}`));
+}
+
+document.querySelectorAll('.tab-trigger').forEach((button) => button.addEventListener('click', () => selectTab(button.dataset.tab)));
+
 $('#start').addEventListener('click', () => send({
   type: 'startSession',
   serverUrl: $('#server-url').value,
@@ -46,16 +57,24 @@ window.addEventListener('message', (event) => {
     image.src = message.screenshot ? `data:image/png;base64,${message.screenshot}` : '';
     image.hidden = !message.screenshot;
     $('#screenshot-empty').hidden = Boolean(message.screenshot);
+    if (message.screenshot) selectTab('screen');
   }
   if (message.type === 'element') {
     state.element = message;
     $('#element-id').textContent = `${message.tag ? `${message.tag} / ` : ''}element id: ${message.id}`;
     $('#element-result').hidden = false;
+    selectTab('elements');
   }
   if (message.type === 'notice') {
     const notice = $('#notice');
     notice.textContent = message.text;
     notice.dataset.level = message.level;
+  }
+  if (message.type === 'loading') {
+    const loading = $('#loading');
+    loading.hidden = !message.active;
+    $('#loading-label').textContent = message.label || '処理しています…';
+    document.querySelector('.app-shell').setAttribute('aria-busy', String(message.active));
   }
 });
 
