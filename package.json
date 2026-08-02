@@ -1,0 +1,54 @@
+{
+  "name": "appium-inspector-lite",
+  "displayName": "Appium Inspector Lite",
+  "description": "Inspect and interact with Appium sessions without leaving VS Code.",
+  "version": "0.1.0",
+  "publisher": "noritaka1166",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/noritaka1166/vscode-appium-inspector-lite.git"
+  },
+  "bugs": {
+    "url": "https://github.com/noritaka1166/vscode-appium-inspector-lite/issues"
+  },
+  "homepage": "https://github.com/noritaka1166/vscode-appium-inspector-lite#readme",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Testing"
+  ],
+  "activationEvents": [
+    "onCommand:appiumInspector.open"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "appiumInspector.open",
+        "title": "Appium Inspector: Open"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "appiumInspector.open",
+        "key": "ctrl+alt+a",
+        "mac": "cmd+alt+a",
+        "when": "editorTextFocus || activeEditorIsDirty"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "npx @vscode/vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/vscode": "^1.96.0",
+    "@vscode/vsce": "^3.2.1",
+    "typescript": "^5.7.2"
+  }
+}
