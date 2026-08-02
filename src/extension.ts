@@ -26,7 +26,7 @@ interface SourceElement {
   height: number;
 }
 
-let panel: vscode.WebviewPanel | undefined;
+let inspectorWebview: vscode.Webview | undefined;
 let session: SessionState | undefined;
 let output: vscode.OutputChannel;
 let serverProcess: ChildProcessWithoutNullStreams | undefined;
@@ -35,27 +35,37 @@ let latestSource = '';
 export function activate(context: vscode.ExtensionContext): void {
   output = vscode.window.createOutputChannel('Appium Inspector Lite');
   context.subscriptions.push(output);
-  context.subscriptions.push(vscode.commands.registerCommand('appiumInspector.open', () => openInspector(context)));
+  context.subscriptions.push(vscode.window.registerWebviewViewProvider(
+    'appiumInspector.sidebar',
+    new InspectorSidebarProvider(context.extensionUri),
+    { webviewOptions: { retainContextWhenHidden: true } }
+  ));
+  context.subscriptions.push(vscode.commands.registerCommand('appiumInspector.open', openInspector));
 }
 
-function openInspector(context: vscode.ExtensionContext): void {
-  if (panel) {
-    panel.reveal(vscode.ViewColumn.Beside);
-    return;
-  }
+class InspectorSidebarProvider implements vscode.WebviewViewProvider {
+  constructor(private readonly extensionUri: vscode.Uri) {}
 
-  panel = vscode.window.createWebviewPanel(
-    'appiumInspectorLite',
-    'Appium Inspector Lite',
-    vscode.ViewColumn.Beside,
-    { enableScripts: true, retainContextWhenHidden: true }
-  );
-  panel.webview.html = getWebviewHtml(panel.webview, context.extensionUri);
-  panel.onDidDispose(() => { panel = undefined; }, undefined, context.subscriptions);
-  panel.webview.onDidReceiveMessage((message: WebviewMessage) => handleMessage(message), undefined, context.subscriptions);
+  resolveWebviewView(webviewView: vscode.WebviewView): void {
+    const webview = webviewView.webview;
+    inspectorWebview = webview;
+    webview.options = { enableScripts: true };
+    webview.html = getWebviewHtml(webview, this.extensionUri);
+    webview.onDidReceiveMessage((message: WebviewMessage) => handleMessage(message));
+    webviewView.onDidDispose(() => {
+      if (inspectorWebview === webview) {
+        inspectorWebview = undefined;
+      }
+    });
+  }
+}
+
+async function openInspector(): Promise<void> {
+  await vscode.commands.executeCommand('workbench.view.extension.appiumInspector');
 }
 
 type WebviewMessage =
+  | { type: 'ready' }
   | { type: 'startSession'; serverUrl: string; capabilities: string }
   | { type: 'startServer'; serverUrl: string }
   | { type: 'stopServer' }
@@ -71,6 +81,12 @@ type WebviewMessage =
 async function handleMessage(message: WebviewMessage): Promise<void> {
   try {
     switch (message.type) {
+      case 'ready':
+        postServerState();
+        if (session) {
+          post({ type: 'session', id: session.id });
+        }
+        break;
       case 'startSession':
         await startSession(message.serverUrl, message.capabilities);
         await refreshInspector();
@@ -414,7 +430,7 @@ function normaliseServerUrl(value: string): string {
 }
 
 function post(message: unknown): void {
-  void panel?.webview.postMessage(message);
+  void inspectorWebview?.postMessage(message);
 }
 
 function postServerState(): void {

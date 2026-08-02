@@ -13,7 +13,7 @@ VS Code 内で Appium セッションを開始し、端末画面の確認、Page
 ## 使い方
 
 1. Appium Server と対象端末（エミュレータまたは実機）を起動します。
-2. VS Code でコマンドパレットを開き、`Appium Inspector: Open` を実行します。
+2. VS Code の Activity Bar にある **Appium Inspector** アイコンを選択します。コマンドパレットの `Appium Inspector: Open` または `⌘⌥A`（Windows / Linux: `Ctrl+Alt+A`）でもサイドバーを開けます。
 3. Server URL と Capabilities を入力して **セッション開始** を選びます。
 
 ローカルに `appium` コマンドをインストール済みであれば、Inspector の **Server 起動** からも起動できます。`localhost` / `127.0.0.1` のみ対応し、サーバーログは **ログを表示** で確認できます。

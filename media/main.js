@@ -58,3 +58,5 @@ window.addEventListener('message', (event) => {
     notice.dataset.level = message.level;
   }
 });
+
+send({ type: 'ready' });

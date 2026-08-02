@@ -20,10 +20,29 @@
     "Testing"
   ],
   "activationEvents": [
-    "onCommand:appiumInspector.open"
+    "onCommand:appiumInspector.open",
+    "onView:appiumInspector.sidebar"
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "appiumInspector",
+          "title": "Appium Inspector",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "appiumInspector": [
+        {
+          "type": "webview",
+          "id": "appiumInspector.sidebar",
+          "name": "Inspector"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "appiumInspector.open",
